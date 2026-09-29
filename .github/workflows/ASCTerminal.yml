@@ -1,0 +1,79 @@
+name: ASCTerminal
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ASCTerminal
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install declared dependencies
+        run: python -m pip install --upgrade pip && pip install -r requirements.txt
+
+      - name: Syntax check
+        run: python -m py_compile asc_terminal.py
+
+      - name: Verify implementation has no test doubles
+        run: |
+          if grep -RniE '\b(mock|fake|stub|simulat(e|ed|ion)|dummy)\b' asc_terminal.py README.md; then
+            echo 'Test-double markers found in shipped implementation.'
+            exit 1
+          fi
+
+      - name: Download a real small GGUF for inference bench
+        run: |
+          python -m pip install --upgrade huggingface_hub
+          python - <<'PY'
+          from huggingface_hub import hf_hub_download
+          hf_hub_download(
+              repo_id='Qwen/Qwen2.5-0.5B-Instruct-GGUF',
+              filename='qwen2.5-0.5b-instruct-q4_k_m.gguf',
+              local_dir='.'
+          )
+          PY
+
+      - name: Run real local-model inference
+        env:
+          ASC_MODEL_NAME: qwen2.5-0.5b-instruct-q4_k_m.gguf
+          ASC_MODEL_URL: https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf
+        run: |
+          python - <<'PY'
+          import os
+          from asc_terminal import get_ai_response
+          from llama_cpp import Llama
+          model = Llama(model_path=os.environ['ASC_MODEL_NAME'], n_ctx=512, n_threads=2, verbose=False)
+          response = get_ai_response(model, 'Reply with exactly: REAL_INFERENCE_OK', [])
+          assert response.strip(), 'Model returned an empty response'
+          print('REAL_INFERENCE_OK')
+          print(response)
+          PY
+
+      - name: Package source artifact
+        run: |
+          rm -rf __pycache__
+          rm -f qwen2.5-0.5b-instruct-q4_k_m.gguf
+          cd ..
+          zip -r ASCTerminal-artifact.zip ASCTerminal -x 'ASCTerminal/.git/*'
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ASCTerminal
+          path: ASCTerminal/ASCTerminal-artifact.zip
