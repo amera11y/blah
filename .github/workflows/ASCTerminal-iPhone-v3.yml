@@ -1,0 +1,85 @@
+name: ASCTerminal iPhone
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Clone llama.cpp
+        run: git clone --depth 1 https://github.com/ggml-org/llama.cpp.git .build/llama.cpp
+
+      - name: Build llama.cpp iOS XCFramework
+        working-directory: .build/llama.cpp
+        run: ./build-xcframework.sh ios-sim ios-device
+
+      - name: Install local llama XCFramework
+        run: |
+          mkdir -p Frameworks
+          cp -R .build/llama.cpp/build-apple/llama.xcframework Frameworks/llama.xcframework
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build iPhone device app (unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild -project ASCTerminal.xcodeproj \
+            -scheme ASCTerminal \
+            -sdk iphoneos \
+            -destination "generic/platform=iOS" \
+            -configuration Debug \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" build | tail -100
+
+      - name: Build iPhone simulator app
+        run: |
+          xcodebuild -project ASCTerminal.xcodeproj \
+            -scheme ASCTerminal \
+            -sdk iphonesimulator \
+            -configuration Debug \
+            -derivedDataPath build-sim \
+            CODE_SIGNING_ALLOWED=NO build | tail -80
+
+      - name: Verify clean artifact contents
+        run: |
+          test -d build/Build/Products/Debug-iphoneos/ASCTerminal.app
+          test -d build-sim/Build/Products/Debug-iphonesimulator/ASCTerminal.app
+          test -f ASCTerminal/ContentView.swift
+          test -f ASCTerminal/LlamaRunner.swift
+          test -z "$(find . -type f \( -name '*.gguf' -o -name '*.pyc' \) -print -quit)"
+
+      - name: Package iPhone app
+        run: |
+          mkdir -p artifacts
+          cp -R build/Build/Products/Debug-iphoneos/ASCTerminal.app artifacts/ASCTerminal-iphoneos.app
+          cp -R build-sim/Build/Products/Debug-iphonesimulator/ASCTerminal.app artifacts/ASCTerminal-iphonesimulator.app
+          zip -r ASCTerminal-iPhone-source.zip . \
+            -x '.git/*' '.build/*' 'build/*' 'Frameworks/*'
+
+      - name: Upload iPhone app
+        uses: actions/upload-artifact@v4
+        with:
+          name: ASCTerminal-iPhone-app
+          path: artifacts/ASCTerminal-iphoneos.app
+
+      - name: Upload clean source
+        uses: actions/upload-artifact@v4
+        with:
+          name: ASCTerminal-iPhone-source
+          path: ASCTerminal-iPhone-source.zip
