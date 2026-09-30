@@ -1,18 +1,14 @@
-# ASC Terminal
+# ASCTerminal — iPhone
 
-Standalone local AI terminal extracted from the uploaded source.
+Native SwiftUI port of the original ASC Terminal concept: an ASCII-infused, lightweight local AI terminal that gives short, actionable responses from a local GGUF model.
 
-## Requirements
+## iPhone use
+1. Build the project with the included GitHub Action on macOS.
+2. Put a compatible `.gguf` model in Files/iCloud Drive.
+3. Open ASC Terminal and tap **Import GGUF**.
+4. Type commands at `ASC >>`. Inference runs locally through llama.cpp.
 
-- Python 3.10+
-- A machine capable of running `llama-cpp-python`
-- Several GB of disk space for the GGUF model
+The original Python implementation used Phi-3-mini-4k-instruct. The native app accepts GGUF models so the model is not incorrectly hard-coded or bundled into a huge iOS artifact.
 
-## Run
-
-```bash
-python3 -m pip install -r requirements.txt
-python3 asc_terminal.py
-```
-
-The program downloads the configured Phi-3 GGUF model on first run if it is not already present. The original source used an automatic `pip install` and automatic model download; this package keeps that behavior available through the normal requirements/install flow rather than hiding dependency installation inside the application.
+## Build
+The workflow builds the official llama.cpp XCFramework, generates the Xcode project with XcodeGen, builds the iOS Simulator app unsigned, and uploads a clean `.app` plus source ZIP.
